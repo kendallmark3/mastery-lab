@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+{% if resume %}
+<section class="hero">
+  <p class="eyebrow">Continue where you left off</p>
+  <h1>{{ resume.goal.title }}</h1>
+  <p class="muted">{{ resume.goal.domain }}</p>
+  <div class="next">
+    <p class="next-label">Recommended next step</p>
+    <p>{{ resume.recommendation.message }}</p>
+    {% set r = resume.recommendation %}
+    {% if r.submission_id %}<a class="button" href="/submissions/{{ r.submission_id }}">Open submission #{{ r.submission_id }}</a>
+    {% elif r.challenge_id %}<a class="button" href="/challenges/{{ r.challenge_id }}">Open challenge</a>
+    {% else %}<a class="button" href="/goals/{{ resume.goal.id }}">Open goal</a>{% endif %}
+    <a class="button secondary" href="/goals/{{ resume.goal.id }}">Goal overview</a>
+  </div>
+</section>
+{% endif %}
+
+<section>
+  <h2>Learning goals</h2>
+  <ul class="cards">
+    {% for g in goals %}
+    <li class="card">
+      <a href="/goals/{{ g.id }}"><strong>{{ g.title }}</strong></a>
+      <span class="muted">{{ g.domain }}{% if g.last_activity %} · last activity {{ g.last_activity[:16].replace('T',' ') }} UTC{% endif %}</span>
+    </li>
+    {% else %}
+    <li class="muted">No goals yet.</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section>
+  <details {% if form %}open{% endif %}>
+    <summary>Create a new learning goal</summary>
+    <form method="post" action="/goals" class="stack">
+      <label>Goal<input name="title" value="{{ form.title if form else '' }}" placeholder="What do you want to be able to do?"></label>
+      <label>Domain<input name="domain" value="{{ form.domain if form else '' }}" placeholder="e.g. Enterprise AI Architecture"></label>
+      <label>Description<textarea name="description" rows="3">{{ form.description if form else '' }}</textarea></label>
+      <button type="submit">Create goal</button>
+    </form>
+  </details>
+</section>
+{% endblock %}

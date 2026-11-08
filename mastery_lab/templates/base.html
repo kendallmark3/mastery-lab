@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Mastery Lab{% endblock %} · Mastery Lab</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="/" class="brand">Mastery Lab</a>
+    <span class="tagline">Learn. Teach. Master.</span>
+    <span class="local-badge" title="Bound to 127.0.0.1. No authentication. Not production-ready.">Local POC</span>
+  </header>
+  <main>
+    {% if error %}<div class="alert" role="alert"><strong>Not saved.</strong> {{ error }}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer>Local single-user proof of concept · data stays in your SQLite file · not production-ready</footer>
+</body>
+</html>

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Submission #{{ sub.id }}{% endblock %}
+{% block content %}
+{% set ch = sub.challenge %}
+<nav class="crumbs"><a href="/">Goals</a> / <a href="/goals/{{ goal.id }}">{{ goal.title }}</a> / <a href="/challenges/{{ ch.id }}">{{ ch.title }}</a> /</nav>
+<p class="eyebrow">Submission #{{ sub.id }} · {{ sub.created_at[:16].replace('T',' ') }} UTC · via {{ sub.source }}</p>
+<h1>{{ ch.title }}</h1>
+
+<div class="next">
+  <p class="next-label">Recommended next step</p>
+  <p>{{ rec.message }}</p>
+  {% if rec.evaluator_next_step %}<p class="muted">Evaluator ({{ rec.evaluator }}) suggested: “{{ rec.evaluator_next_step }}”</p>{% endif %}
+  {% if rec.focus_criteria %}<ul class="focus">{% for f in rec.focus_criteria %}<li><span class="code">{{ f.code }}</span> {{ f.title }} — <span class="muted">{{ f.reason }}</span></li>{% endfor %}</ul>{% endif %}
+  <p class="basis">Based on: {{ rec.basis }}</p>
+</div>
+
+<h2>Submitted text</h2>
+<p class="muted">Highlighted passages are cited as evidence by at least one feedback record.</p>
+<div class="submission">{% for text, ev in segments %}{% if ev %}<mark>{{ text }}</mark>{% else %}{{ text }}{% endif %}{% endfor %}</div>
+
+<h2 id="feedback">Feedback</h2>
+<p class="assurance">{{ ASSURANCE_NOTE }}</p>
+{% for fb in sub.feedback %}
+<article class="feedback">
+  <header>
+    <strong>Feedback #{{ fb.id }}</strong>
+    <span class="provider {{ fb.provider_kind }}">{{ 'AI assistant' if fb.provider_kind == 'ai_assistant' else 'Human' }}: {{ fb.provider_name }}</span>
+    <span class="muted">{{ fb.created_at[:16].replace('T',' ') }} UTC · via {{ fb.channel }}</span>
+  </header>
+  {% if fb.summary %}<p>{{ fb.summary }}</p>{% endif %}
+  <table class="items">
+    <thead><tr><th>Criterion</th><th>Rating</th><th>Observed in submission (with evidence)</th><th>Evaluator judgment</th><th>Gaps</th></tr></thead>
+    <tbody>
+    {% for it in fb["items"] %}
+      <tr>
+        <td><span class="code">{{ it.criterion_code }}</span> {{ it.criterion_title }}</td>
+        <td><span class="rating {{ it.rating }}">{{ RATING_LABELS[it.rating] }}</span>
+            <div class="support {{ it.support }}">{{ SUPPORT_LABELS[it.support] }}</div></td>
+        <td>{{ it.observation }}
+          {% for e in it.evidence %}<blockquote>“{{ e.excerpt }}” <span class="muted">[evidence #{{ e.id }}, chars {{ e.start_offset }}–{{ e.end_offset }}]</span></blockquote>{% endfor %}</td>
+        <td>{{ it.judgment }}</td>
+        <td>{{ it.gaps }}</td>
+      </tr>
+    {% endfor %}
+    {% for na in fb.not_assessed %}
+      <tr class="na"><td><span class="code">{{ na.code }}</span> {{ na.title }}</td><td colspan="4" class="muted">Not assessed in this feedback record</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if fb.unverified_claims %}
+  <div class="unverified"><strong>Claims in the submission not substantiated by the text:</strong>
+    <ul>{% for c in fb.unverified_claims %}<li>{{ c }}</li>{% endfor %}</ul></div>
+  {% endif %}
+  {% if fb.next_step %}<p><strong>Evaluator’s suggested next step:</strong> {{ fb.next_step }}</p>{% endif %}
+</article>
+{% else %}
+<p class="muted">No feedback yet. Enter it below, paste structured feedback from an AI assistant, or have a connected assistant record it through MCP.</p>
+{% endfor %}
+
+<h2>Add feedback</h2>
+<details {% if form %}open{% endif %}>
+  <summary>Criterion-by-criterion feedback form (self-review, mentor, or reviewer)</summary>
+  <form method="post" action="/submissions/{{ sub.id }}/feedback" class="stack">
+    <div class="row">
+      <label>Provided by<input name="provider_name" value="{{ form.provider_name if form else '' }}" placeholder="Your name, mentor, or assistant name"></label>
+      <label>Provider type<select name="provider_kind">
+        <option value="human" {% if not form or form.provider_kind == 'human' %}selected{% endif %}>Human</option>
+        <option value="ai_assistant" {% if form and form.provider_kind == 'ai_assistant' %}selected{% endif %}>AI assistant</option></select></label>
+    </div>
+    {% for c in ch.criteria %}
+    <fieldset>
+      <legend><span class="code">{{ c.code }}</span> {{ c.title }}</legend>
+      <p class="muted small">{{ c.description }}</p>
+      <label>Rating<select name="rating_{{ c.code }}">
+        <option value="">— not assessed —</option>
+        {% for r in RATINGS %}<option value="{{ r }}" {% if form and form['rating_' ~ c.code] == r %}selected{% endif %}>{{ RATING_LABELS[r] }}</option>{% endfor %}
+      </select></label>
+      <label>Evidence — exact quotes from the submission, one per line
+        <textarea name="quotes_{{ c.code }}" rows="2">{{ form['quotes_' ~ c.code] if form else '' }}</textarea></label>
+      <div class="row">
+        <label>Observation (what the text says)<textarea name="observation_{{ c.code }}" rows="2">{{ form['observation_' ~ c.code] if form else '' }}</textarea></label>
+        <label>Judgment (your inference)<textarea name="judgment_{{ c.code }}" rows="2">{{ form['judgment_' ~ c.code] if form else '' }}</textarea></label>
+        <label>Gaps / uncertainty<textarea name="gaps_{{ c.code }}" rows="2">{{ form['gaps_' ~ c.code] if form else '' }}</textarea></label>
+      </div>
+    </fieldset>
+    {% endfor %}
+    <label>Summary<textarea name="summary" rows="2">{{ form.summary if form else '' }}</textarea></label>
+    <label>Claims the text does not substantiate — one per line<textarea name="unverified_claims" rows="2">{{ form.unverified_claims if form else '' }}</textarea></label>
+    <label>Suggested next step<input name="next_step" value="{{ form.next_step if form else '' }}"></label>
+    <button type="submit">Save feedback</button>
+  </form>
+</details>
+
+<details {% if json_payload %}open{% endif %}>
+  <summary>Use any AI assistant without a connector (copy prompt → paste JSON)</summary>
+  <p class="muted">Nothing is sent anywhere by this app. Copy the prompt into an assistant you choose, then paste its JSON reply. Quotes are checked against your text before anything is saved.</p>
+  <label>Prompt<textarea readonly rows="10" class="mono" onclick="this.select()">{{ prompt }}</textarea></label>
+  <form method="post" action="/submissions/{{ sub.id }}/feedback-json" class="stack">
+    <label>Assistant’s JSON reply<textarea name="payload" rows="8" class="mono">{{ json_payload or '' }}</textarea></label>
+    <button type="submit">Validate and save</button>
+  </form>
+</details>
+{% endblock %}

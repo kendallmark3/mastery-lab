@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ ch.title }}{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="/">Goals</a> / <a href="/goals/{{ goal.id }}">{{ goal.title }}</a> /</nav>
+<p class="eyebrow">Challenge · {{ goal.domain }}</p>
+<h1>{{ ch.title }}</h1>
+
+<div class="grid">
+  <section>
+    <h2>Scenario</h2>
+    <div class="prose">{{ ch.scenario }}</div>
+    <h2>Deliverable</h2>
+    <div class="prose">{{ ch.deliverable }}</div>
+  </section>
+  <section>
+    <h2>Evaluation criteria</h2>
+    <ol class="criteria">
+      {% for c in ch.criteria %}
+      <li><span class="code">{{ c.code }}</span> <strong>{{ c.title }}</strong>
+        <p>{{ c.description }}</p>
+        {% if c.strong_evidence %}<p class="muted">Strong evidence: {{ c.strong_evidence }}</p>{% endif %}</li>
+      {% endfor %}
+    </ol>
+  </section>
+</div>
+
+<h2 id="submit">Your solution</h2>
+<form method="post" action="/challenges/{{ ch.id }}/submissions" class="stack">
+  <textarea name="content" rows="18" placeholder="Write your architecture here. State assumptions; say what would demonstrate each claim.">{{ draft or '' }}</textarea>
+  <button type="submit">Save submission</button>
+</form>
+
+{% if submissions %}
+<h2>Previous submissions</h2>
+<ul class="cards">
+  {% for s in submissions|reverse %}
+  <li class="card"><a href="/submissions/{{ s.id }}">Submission #{{ s.id }}</a>
+    <span class="muted">{{ s.created_at[:16].replace('T',' ') }} UTC · via {{ s.source }} · {{ s.feedback|length }} feedback record(s)</span></li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,14 @@
+$ python -m mastery_lab web --db /tmp/demo/lab.db &
+Mastery Lab: http://127.0.0.1:8765   (db: /tmp/demo/lab.db)
+$ curl -s -o /dev/null -w GET / -> %{http_code}\n http://127.0.0.1:8765/
+GET / -> 200
+$ python3 scripts/ui_walkthrough.py phase1
+submission: http://127.0.0.1:8765/submissions/1
+--- stopping server (pid 139) to simulate closing the program ---
+$ curl -s -o /dev/null -w GET / while stopped -> %{http_code}\n http://127.0.0.1:8765/
+GET / while stopped -> 000
+$ python -m mastery_lab web --db /tmp/demo/lab.db &   # restart
+Mastery Lab: http://127.0.0.1:8765   (db: /tmp/demo/lab.db)
+$ python3 scripts/ui_walkthrough.py phase2
+$ ss -ltnp
+environment: line 33: ss: command not found

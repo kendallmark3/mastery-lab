@@ -1,158 +1,151 @@
-# Intent-Driven Engineering Starter
+# Mastery Lab — POC 0.1
 
-**This is the canonical starting point for Intent-Driven Engineering.**
+**AI for Humans — Learn. Teach. Master.**
 
-Most AI coding workflows start with a prompt and hope the model infers what you meant. Intent-Driven Engineering flips that: you write the *intent* down first, and every agent, hook, and check in this repo reads that intent before it touches code.
+Mastery Lab is the smallest working loop that turns an AI-assisted conversation into
+*demonstrated* learning:
 
-![The Progressive Intent loop: Intent, Plan, Build, Observe, Validate, Refine, then Continue or Stop](docs/images/progressive-intent-loop.png)
+**set a goal → get a practical challenge → submit your own answer → get criterion-by-criterion,
+evidence-linked feedback → save progress → resume later.**
 
-Learn the methodology in depth at **[learnteachmaster.org](https://learnteachmaster.org)** and **[intent-driven-engineering.com](https://intent-driven-engineering.com)**.
+It is not a chatbot. Your AI assistant (Claude or any MCP-capable client) supplies the
+conversation and evaluation; Mastery Lab supplies the persistent records, challenge structure,
+evidence checks, and tools that assistants lack. Everything runs locally, needs no API key, and
+works fully from the browser even with no assistant connected.
 
-## Install
+Built from the [intent-drive-starter](docs/intent-drive-starter-README.md) scaffold. The intent is in
+[`intent/INTENT-001-mastery-lab.md`](intent/INTENT-001-mastery-lab.md); validation evidence is in
+[`docs/EVIDENCE.md`](docs/EVIDENCE.md).
 
-This repo is a Claude Code plugin and its own marketplace. One line adds the marketplace and installs the plugin:
+## Prerequisites
+
+- Python 3.11+ (tested on 3.13)
+- That's it. No cloud account, model API key, or paid service.
+
+## Start (3 commands)
 
 ```bash
-claude plugin marketplace add kendallmark3/intent-drive-starter && claude plugin install intent-drive-starter@intent-drive-starter
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+python -m mastery_lab web          # → http://127.0.0.1:8765
 ```
 
-Then, in any project, start a Claude Code session and run:
+Data lives in `data/mastery_lab.db` (SQLite). Override with `--db PATH` or `MASTERY_LAB_DB`.
+The seed goal and challenge are created automatically on first run.
 
-```text
-/intent-drive-starter:start <the outcome you want>
+Run the tests:
+
+```bash
+pytest -q                     # 32 tests: loop, restart persistence, invalid inputs, evidence linkage, MCP stdio
+bash tests/pre-implement.test.sh   # starter's intent-gate tests
 ```
 
-That creates `intent/current-feature.md` in your project, records the outcome and how success will be judged, and builds the first thing you can look at. The scripts need `bash`.
+## Five-minute demo
 
-See [install-plugin.md](install-plugin.md) for the full install guide and everything the plugin gives you.
+1. **Start** — `python -m mastery_lab web`, open http://127.0.0.1:8765. The home page shows the
+   *Enterprise AI Architecture* goal and the recommended next step. *(SC-01)*
+2. **Practice** — click **Open challenge**. Read the Calder Medical Distribution scenario, the
+   deliverable, and the six visible criteria C1–C6. *(SC-02)*
+3. **Trust check** — click **Save submission** with an empty box: it is rejected and nothing is saved. *(SC-07)*
+4. **Submit** — paste your own answer (or `docs/demo/sample-submission.md`) and save. You land on
+   submission #1, linked to that goal and challenge. *(SC-03)*
+5. **Evaluate** — open **Criterion-by-criterion feedback form**. For C5 choose *Demonstrated* and enter
+   a quote that is *not* in your text — e.g. `We run quarterly disaster-recovery drills`. Saving is
+   refused. Now enter real quotes for a few criteria, rate one positively with no quote, rate
+   one *Not evident*, and list a claim you can't back up. Save. The page shows each criterion with
+   highlighted evidence, *Unverified judgment* where no quote was given, *Not assessed* rows, and the
+   evaluator's next step. *(SC-04, SC-07)*
+6. **Persist** — stop the server (Ctrl-C), start it again, reload. Home says *Continue where you
+   left off* and links to the submission; the goal page shows session history. *(SC-05)*
+7. **Reuse via MCP** — with the server still running, in a second terminal:
+   `python scripts/mcp_roundtrip.py`. It launches the MCP server over stdio, records a second
+   submission and evidence-linked feedback, and shows the three rejections. Reload
+   `/submissions/2` in the browser to see the record it created, tagged *via mcp*. *(SC-06)*
 
-Prefer the files in your own repo? Clone or copy this repository instead and use it as the scaffold; see [Getting started](#getting-started).
+No-connector option: on any submission page, **Use any AI assistant without a connector** gives you
+a prompt to paste into any assistant and a box to paste its JSON reply. Quotes are validated before
+anything is saved. Nothing leaves your machine unless you copy it out yourself.
 
-## The operating model
+## Connect an MCP client
 
-### Intent-Driven Engineering
+The MCP server uses the official Python MCP SDK v2 (`mcp>=2.3`, `MCPServer`) over **stdio**.
 
-The overall engineering approach: the human states what is wanted and how success will be judged; the AI reads the repository and works out how to get there.
+**Claude Desktop / Claude Code** (example config; use absolute paths):
 
-### Progressive Intent
+```json
+{
+  "mcpServers": {
+    "mastery-lab": {
+      "command": "/ABSOLUTE/PATH/mastery-lab/.venv/bin/python",
+      "args": ["-m", "mastery_lab", "mcp", "--db", "/ABSOLUTE/PATH/mastery-lab/data/mastery_lab.db"]
+    }
+  }
+}
+```
 
-The preferred way Intent-Driven Engineering evolves software.
+Claude Code alternative: `claude mcp add mastery-lab -- /ABS/PATH/.venv/bin/python -m mastery_lab mcp --db /ABS/PATH/data/mastery_lab.db`
 
-**Repository State + Next Intent = Next Repository State**
+Point the web app and MCP server at the **same `--db` file** to share records (SQLite WAL mode
+allows both at once).
 
-**Intent → Build → Observe → Learn → Refine → Continue or Stop**
-
-1. **Intent.** Write the smallest useful expression of what is wanted in [`intent/current-feature.md`](intent/current-feature.md). Only *Outcome* and *Success / Evidence* are needed to start; add Inputs, Outputs, or Constraints / Boundaries when they are real. The project-level version lives in [`intent/project-intent.md`](intent/project-intent.md).
-2. **Build.** [`hooks/pre-implement.sh`](hooks/pre-implement.sh) checks that the intent is sufficient, not that it is a complete specification. With the plugin installed, code edits are blocked until it passes; Markdown is never blocked, and projects without an intent file are left alone. The [feature-planner skill](skills/feature-planner/SKILL.md) then finds the smallest useful delta from the current repository state, and it gets built into something observable.
-3. **Observe.** The [`post-implement`](hooks/post-implement.md) hook runs tests and updates docs. Then the human evaluates the actual running result.
-4. **Learn and refine.** Ordinary feedback is enough: "keep this", "change that", "this is too complicated". The [progressive-intent skill](skills/progressive-intent/SKILL.md) turns it into a delta, appended to the same intent file using [`templates/delta-template.md`](templates/delta-template.md). The original intent is not rewritten.
-5. **Continue or Stop.** Every cycle ends in that decision. Repeat only while another change produces value. On Stop, the [`pre-pr`](hooks/pre-pr.md) hook, review against the intent, and CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) are the last gates.
-
-### Who owns what
-
-| Human | AI |
+| Tool | Purpose |
 | --- | --- |
-| Desired outcome | Reasoning and planning |
-| Authoritative inputs and required outputs | Architecture and technical choices |
-| True constraints and boundaries | Implementation approach and sequencing |
-| Success criteria and evidence | Code structure and testing approach |
-| Observations of the running result | |
-| The continue or stop decision | |
+| `get_learner_context(goal_id?)` | Goals, or one goal's challenges, submissions, feedback, history, next step |
+| `create_goal` | New learning goal |
+| `get_challenge(challenge_id)` | Scenario, deliverable, criteria (logs that it was opened) |
+| `create_challenge` | Assistant-authored follow-up challenge with explicit criteria |
+| `record_submission(challenge_id, content)` | Save the learner's own answer; goal derived from challenge |
+| `get_submission(submission_id)` | Submission + criteria + evidence + feedback, for evaluation |
+| `record_feedback(...)` | Criterion items with `observation` / `judgment` / `gaps` / verbatim `evidence_quotes` |
+| `recommend_next_practice(goal_id)` | Next step plus the records it is based on |
 
-The rule is **minimum sufficient constraint**: structure the boundary, not the reasoning. The repository is the source of current-state truth, so the human does not restate what the code, tests, and [`context/`](context/) already say.
+**Integration status, stated honestly:** the MCP server has been tested end to end with the MCP SDK's
+own client over a real stdio subprocess (`scripts/mcp_roundtrip.py`, `tests/test_mcp.py`). It has
+**not** been tested inside Claude Desktop, Claude Code, ChatGPT, or any other end-user client.
 
-Progressive Intent does not mean no architecture, testing, security, documentation, QA, review, CI, or constraints. It means they are applied when the problem and evidence justify them, instead of being predicted up front in the first intent.
+## How honesty is enforced
 
-### What a cycle looks like
+All rules live in `mastery_lab/service.py`, so the browser, pasted JSON, and MCP share them:
 
-The first intent:
+- **Evidence must be real.** Each evidence reference must be a verbatim excerpt (≥ 8 characters,
+  whitespace-tolerant) of *that* submission, or an evidence id belonging to it. One bad reference
+  and the whole feedback record is rejected. Nothing is half-saved.
+- **Observation vs. judgment.** Each criterion item separates what the text says from what the
+  evaluator infers, plus gaps.
+- **Unsupported positives are labelled.** *Demonstrated* or *Partial* with no evidence is shown as
+  **Unverified judgment**. Unaddressed criteria are shown as **Not assessed**.
+- **Provenance.** Every feedback record stores who provided it (human or AI assistant, by name) and
+  the channel (`web-form`, `web-json`, `mcp`).
+- **Unverified claims.** Evaluators can list claims the learner makes that the text doesn't back up.
+- **No score.** There is no numeric mastery score. Every feedback view states that it assesses
+  design reasoning, not operational effectiveness.
+- **No misattribution.** Submissions take their goal from the challenge, and feedback criteria must
+  belong to the submission's challenge.
 
-```markdown
-## Outcome
-Operators can see the status of nightly jobs on one page.
+## Layout
 
-## Success / Evidence
-Last night's jobs appear with their status.
+```
+mastery_lab/
+  service.py      the single learning engine: records, validation, recommendation
+  db.py           SQLite schema (goals, challenges, criteria, submissions, evidence,
+                  feedback, feedback_items, feedback_item_evidence, activity)
+  seed.py         Enterprise AI Architecture goal + governed-assistant challenge
+  web.py          FastAPI + Jinja browser UI (loopback only)
+  mcp_server.py   MCP tools, thin adapter over service.py
+scripts/          mcp_roundtrip.py (stdio transcript), ui_walkthrough.py (Playwright screenshots)
+tests/            pytest suite + starter intent-gate test
+docs/EVIDENCE.md  commands, results, screenshots, transcript, known issues
 ```
 
-After seeing the result, the human says: *"Keep the layout, but the dashboard feels too busy. Make failures obvious."* That becomes a delta appended to the same file:
+## Limitations
 
-```markdown
-# Intent Delta
-
-## Observation
-The dashboard feels too busy.
-
-## Keep
-The layout.
-
-## Change
-Make failures obvious.
-
-## Evidence
-A failed job stands out without reading the whole page.
-```
-
-## What's in the repo
-
-- [`intent/`](intent/) — the project intent and the current feature intent with its deltas.
-- [`context/`](context/) — architecture, business rules, glossary, integrations, security: what the code alone cannot show.
-- [`.claude-plugin/`](.claude-plugin/) — the plugin and marketplace manifests that make the repo installable.
-- [`skills/`](skills/) — [start](skills/start/SKILL.md), [feature-planner](skills/feature-planner/SKILL.md), and [progressive-intent](skills/progressive-intent/SKILL.md).
-- [`agents/`](agents/) — planner, developer, QA, reviewer roles. A normal Claude session can run the whole loop; the roles are there when you want to split it.
-- [`hooks/`](hooks/) — pre-implement (a runnable check, enforced by [`hooks.json`](hooks/hooks.json) when installed as a plugin), plus post-implement and pre-pr guidance.
-- [`templates/`](templates/) — feature, delta, bug, ADR.
-- [`tests/`](tests/) — tests for the pre-implement check and its hook, run by CI.
-
-## Architecture
-
-![Progressive Intent architecture diagram](docs/images/architecture.png)
-
-[View the HTML version](docs/architecture.html) (open locally, or enable GitHub Pages on this repo to serve it live).
-
-<details>
-<summary>Mermaid source (renders inline on GitHub)</summary>
-
-```mermaid
-flowchart TD
-    PI["intent/project-intent.md<br/>Purpose · Business Outcomes · Constraints"]
-    CF["intent/current-feature.md<br/>Outcome · Success / Evidence<br/>+ appended deltas"]
-    REPO["Repository state<br/>code · tests · context/"]
-
-    PI --> CF
-
-    subgraph Loop["Progressive Intent loop"]
-        direction TB
-        PRE["pre-implement hook<br/>Is the intent sufficient?"]
-        BUILD["Build<br/>smallest useful delta"]
-        POST["post-implement hook<br/>Run tests · update docs"]
-        OBS["Observe<br/>human evaluates the running result"]
-        DEC{"Continue or Stop"}
-
-        PRE --> BUILD --> POST --> OBS --> DEC
-    end
-
-    CF --> PRE
-    REPO -.->|current state| BUILD
-    DEC -->|"Continue: append a delta"| CF
-    DEC -->|Stop| PREPR["pre-pr hook · review against intent"]
-    PREPR --> CI["CI Pipeline<br/>.github/workflows/ci.yml"]
-    CI --> SHIP(["Shipped"])
-```
-
-</details>
-
-## Getting started
-
-With the plugin installed, `/intent-drive-starter:start` does steps 2 and 3 for you. Working from a clone of this repo:
-
-1. Fill out [`intent/project-intent.md`](intent/project-intent.md) with your project's purpose, business outcomes, and constraints.
-2. Write the Outcome and Success / Evidence for your first feature in [`intent/current-feature.md`](intent/current-feature.md).
-3. Run `hooks/pre-implement.sh`, then build the smallest thing you can look at.
-4. Look at it, say what you think, and append a delta. Continue or stop.
-5. Add to [`context/`](context/) only what the repository cannot show on its own.
-
-## Learn more
-
-- **[learnteachmaster.org](https://learnteachmaster.org)** — canonical home for Learn/Teach/Master and where Intent-Driven Engineering is taught in depth.
-- **[intent-driven-engineering.com](https://intent-driven-engineering.com)** — the methodology itself, in detail.
+- **Not production-ready.** Single local user, no authentication, no authorization, no encryption at
+  rest, no compliance controls. The web server binds `127.0.0.1` by default and warns if you change it.
+- The "next step" is a transparent rule over your records (gaps, unverified items, unassessed
+  criteria, plus the evaluator's own suggestion). It does not teach. Teaching comes from you or your assistant.
+- Evidence checking proves a quote *is in your text*. It does not prove the quote *supports* the
+  rating. That is still the evaluator's judgment, and it is labelled as such.
+- Feedback evaluates written reasoning. It cannot show that an architecture works in operation.
+- No editing or deleting of records through the UI. Each revision is a new submission.
+- Session history is an activity log per goal, not timed study sessions.
+- One seed challenge. More come from `create_challenge` (assistant or the goal page form).

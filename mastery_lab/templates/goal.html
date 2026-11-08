@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.goal.title }}{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="/">Goals</a> /</nav>
+<p class="eyebrow">{{ ctx.goal.domain }}</p>
+<h1>{{ ctx.goal.title }}</h1>
+<p class="lead">{{ ctx.goal.description }}</p>
+
+{% set r = ctx.recommendation %}
+<div class="next">
+  <p class="next-label">Recommended next step</p>
+  <p>{{ r.message }}</p>
+  {% if r.evaluator_next_step %}<p class="muted">Evaluator ({{ r.evaluator }}) suggested: “{{ r.evaluator_next_step }}”</p>{% endif %}
+  <p class="basis">Based on: {{ r.basis }}</p>
+</div>
+
+<h2>Challenges</h2>
+<ul class="cards">
+  {% for ch in ctx.challenges %}
+  <li class="card">
+    <a href="/challenges/{{ ch.id }}"><strong>{{ ch.title }}</strong></a>
+    <span class="muted">{{ ch.criteria|length }} criteria · {{ ch.submissions|length }} submission(s) · by {{ ch.created_by }}</span>
+    {% for s in ch.submissions %}
+      <div class="subrow"><a href="/submissions/{{ s.id }}">Submission #{{ s.id }}</a>
+        <span class="muted">{{ s.created_at[:16].replace('T',' ') }} UTC · {{ s.feedback|length }} feedback record(s)</span></div>
+    {% endfor %}
+  </li>
+  {% else %}
+  <li class="muted">No challenges yet.</li>
+  {% endfor %}
+</ul>
+
+<details {% if form %}open{% endif %}>
+  <summary>Add a challenge</summary>
+  <form method="post" action="/goals/{{ ctx.goal.id }}/challenges" class="stack">
+    <label>Title<input name="title" value="{{ form.title if form else '' }}"></label>
+    <label>Scenario<textarea name="scenario" rows="5">{{ form.scenario if form else '' }}</textarea></label>
+    <label>Deliverable<textarea name="deliverable" rows="3">{{ form.deliverable if form else '' }}</textarea></label>
+    <label>Criteria — one per line as <code>Title :: description</code>
+      <textarea name="criteria" rows="4">{{ form.criteria if form else '' }}</textarea></label>
+    <button type="submit">Create challenge</button>
+  </form>
+</details>
+
+<h2>Session history</h2>
+<ol class="timeline">
+  {% for h in ctx.history %}
+  <li><span class="when">{{ h.created_at[:16].replace('T',' ') }}</span>
+      <span>{{ KIND_LABELS.get(h.kind, h.kind) }}</span>
+      <span class="muted">— {{ h.note }} · via {{ h.channel }}</span></li>
+  {% endfor %}
+</ol>
+{% endblock %}

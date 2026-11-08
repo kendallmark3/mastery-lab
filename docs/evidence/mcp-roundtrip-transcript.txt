@@ -1,0 +1,264 @@
+$ python scripts/mcp_roundtrip.py --db /tmp/demo/lab.db   # web server still running on the same DB
+Connected over stdio to: mastery-lab 0.1.0 (protocol 2026-07-28)
+Tools: get_learner_context, create_goal, get_challenge, create_challenge, record_submission, get_submission, record_feedback, recommend_next_practice
+
+→ call_tool get_learner_context
+{}
+
+← result get_learner_context
+{
+  "goals": [
+    {
+      "id": 1,
+      "slug": "enterprise-ai-architecture",
+      "title": "Design governed AI systems that retrieve enterprise data and execute approved actions",
+      "domain": "Enterprise AI Architecture",
+      "description": "Be able to design, explain, and defend an AI assistant architecture for a regulated enterprise: where its boundaries are, how access is enforced, how actions are governed, how every decision can be audited, and how it fails safely.",
+      "created_at": "2026-11-08T00:33:58+00:00",
+      "last_activity": "2026-11-08T00:34:02+00:00"
+    }
+  ],
+  "hint": "Call again with goal_id for full context."
+}
+
+→ call_tool get_learner_context
+{
+  "goal_id": 1
+}
+
+← result get_learner_context
+{
+  "goal": {
+    "id": 1,
+    "slug": "enterprise-ai-architecture",
+    "title": "Design governed AI systems that retrieve enterprise data and execute approved actions",
+    "domain": "Enterprise AI Architecture",
+    "description": "Be able to design, explain, and defend an AI assistant architecture for a regulated enterprise: where its boundaries are, how access is enforced, how actions are governed, how every decision can be audited, and how it fails safely.",
+    "created_at": "2026-11-08T00:33:58+00:00"
+  },
+  "challenges": [
+    {
+      "id": 1,
+      "goal_id": 1,
+      "slug": "governed-retrieval-and-actions",
+      "title": "Governed assistant: controlled-document retrieval and approved actions",
+      "scenario": "Calder Medical Distribution (fictional) is a regulated distributor of medical supplies. It has\nroughly 4,000 employees across quality, procurement, warehouse operations, and customer service.\n\nLeadership wants an internal AI assistant that can:\n\n1. Answer questions from controlled documents — SOPs, work instructions, supplier quality\n   agreements, and batch/lot quality records. Documents are classified (Public-Internal,\n   Restricted, Quality-Controlled) and access today is governed by department and role in the\n   document management system. Only the currently effective version of a controlled document\n   may be used as a basis for guidance.\n\n2. Propose or execute a small set of business actions:\n   • draft a CAPA (corrective and preventive action) record for human review\n   • place a temporary quality hold on an inventory lot\n   • update a supplier's status (e.g. Approved → Under Review)\n   A quality hold or supplier status change has business and regulatory consequences.\n   Some users may only request actions; others may approve 
+  … (truncated for transcript)
+
+→ call_tool get_challenge
+{
+  "challenge_id": 1
+}
+
+← result get_challenge
+{
+  "id": 1,
+  "goal_id": 1,
+  "slug": "governed-retrieval-and-actions",
+  "title": "Governed assistant: controlled-document retrieval and approved actions",
+  "scenario": "Calder Medical Distribution (fictional) is a regulated distributor of medical supplies. It has\nroughly 4,000 employees across quality, procurement, warehouse operations, and customer service.\n\nLeadership wants an internal AI assistant that can:\n\n1. Answer questions from controlled documents — SOPs, work instructions, supplier quality\n   agreements, and batch/lot quality records. Documents are classified (Public-Internal,\n   Restricted, Quality-Controlled) and access today is governed by department and role in the\n   document management system. Only the currently effective version of a controlled document\n   may be used as a basis for guidance.\n\n2. Propose or execute a small set of business actions:\n   • draft a CAPA (corrective and preventive action) record for human review\n   • place a temporary quality hold on an inventory lot\n   • update a supplier's status (e.g. Approved → Under Review)\n   A quality hold or supplier status change has business and regulatory consequences.\n   Some users may only request actions; others may approve them.\n\nKnown constraints and concerns:\n   • Regulators and internal auditors expect a reconstructable record of who did what, when,\n     on what basis, and with whose approval.\n   • Documents may contain text that looks like instructions (for example in supplier-provided\n     attachments).\n   • The model provider, the document system, and the ERP can each be slow or unavailable.\n   • The assistant must never become a way to see documents or perform actions the user\n     could not see or perform directly.",
+  "deliverable": "A structured written ar
+  … (truncated for transcript)
+
+→ call_tool record_submission
+{
+  "challenge_id": 1,
+  "content": "Assumptions: Calder uses a central identity provider (OIDC) with department and role groups; the document management system (DMS) exposes per-document ACLs and an \"effective version\" flag; the ERP exposes APIs for lots and supplier status.\n\n1. Components and boundaries\n- Chat client (web) authenticates the user via OIDC and sends requests with the user's token.\n- Orchestrator service: the only component that talks to the model. It assembles prompts, calls retrieval and the action gateway, and never stores long-lived credentials in prompts.\n- LLM (hosted model): treated as untrusted for authorization. The model never holds credentials and cannot call source systems directly; it can only return text and structured action proposals.\n- Retrieval service: queries a search index built from the DMS. It is the enforcement point for document access.\n- Action gateway: a separate service with an approved action catalog (draft_capa, place_quality_hold, update_supplier_status), each with a typed JSON schema.\n- Policy engine (OPA) evaluates who may request and who may approve each action.\n- Audit store: append-only log.\n\n2. Access control for retrieval\nThe orchestrator passes the user's identity to the retrieval service using token exchange (on-behalf-of), so retrieval runs with the user's entitlements, not a service super-user. Search results are filtered by the document ACL and classification at query time, inside the retrieval service, before anything reaches the model. Only documents flagged as the currently effective version are indexed for guidance; superseded versions are excluded.\n\n3. Governance of actions\nThe model can only propose an action from the catalog. A proposal is shown to the user with the parameters and the cit
+  … (truncated for transcript)
+
+← result record_submission
+{
+  "submission_id": 2,
+  "challenge_id": 1,
+  "goal_id": 1,
+  "created_at": "2026-11-08T00:34:14+00:00",
+  "characters": 3068
+}
+
+--- Trust checks (each must be rejected) ---
+
+→ call_tool record_submission
+{
+  "challenge_id": 1,
+  "content": "   "
+}
+Tool 'record_submission' failed: 'Error executing tool record_submission: [invalid] Submission is empty. Write your solution before submitting.'
+
+← ERROR record_submission
+"Error executing tool record_submission: [invalid] Submission is empty. Write your solution before submitting."
+
+→ call_tool record_submission
+{
+  "challenge_id": 9999,
+  "content": "an answer"
+}
+Tool 'record_submission' failed: 'Error executing tool record_submission: [not_found] Challenge 9999 does not exist.'
+
+← ERROR record_submission
+"Error executing tool record_submission: [not_found] Challenge 9999 does not exist."
+
+→ call_tool record_feedback
+{
+  "submission_id": 2,
+  "evaluator_name": "mcp_roundtrip.py",
+  "items": [
+    {
+      "criterion": "C5",
+      "rating": "demonstrated",
+      "evidence_quotes": [
+        "We run quarterly disaster-recovery drills"
+      ]
+    }
+  ]
+}
+Tool 'record_feedback' failed: "Error executing tool record_feedback: [invalid] Feedback item for C5 cites evidence 'We run quarterly disaster-recovery drills', which is not an excerpt (≥8 chars) of submission 2."
+
+← ERROR record_feedback
+"Error executing tool record_feedback: [invalid] Feedback item for C5 cites evidence 'We run quarterly disaster-recovery drills', which is not an excerpt (≥8 chars) of submission 2."
+
+--- Evidence-linked feedback (as a connected assistant would record it) ---
+
+→ call_tool record_feedback
+{
+  "submission_id": 2,
+  "evaluator_name": "mcp_roundtrip.py (scripted harness, not an LLM)",
+  "evaluator_kind": "ai_assistant",
+  "summary": "Strong boundaries and retrieval enforcement; validation section does not support its claims.",
+  "next_step": "Replace section 6 with named tests tied to each claim in sections 1–5.",
+  "unverified_claims": [
+    "'fully compliant with 21 CFR Part 11' — no controls mapped",
+    "'proven to block all prompt injection attacks' — no test evidence"
+  ],
+  "items": [
+    {
+      "criterion": "C1",
+      "rating": "demonstrated",
+      "observation": "Names seven components; states the model holds no credentials.",
+      "judgment": "Trust boundary around the model is explicit.",
+      "evidence_quotes": [
+        "The model never holds credentials and cannot call source systems directly"
+      ]
+    },
+    {
+      "criterion": "C2",
+      "rating": "demonstrated",
+      "observation": "On-behalf-of token exchange; ACL + classification filter at query time.",
+      "evidence_quotes": [
+        "token exchange (on-behalf-of)",
+        "filtered by the document ACL and classification at query time"
+      ]
+    },
+    {
+      "criterion": "C3",
+      "rating": "partial",
+      "observation": "Catalog, approver role, separation of duties, idempotency keys.",
+      "gaps": "No reversal path for an erroneous quality hold.",
+      "evidence_quotes": [
+        "the approver cannot be the requester",
+        "idempotency key"
+      ]
+    },
+    {
+      "criterion": "C6",
+      "rating": "not_evident",
+      "observation": "Section 6 says only that it would be tested.",
+      "gaps": "No named tests; makes compliance and injection-proof claims."
+    }
+  ]
+}
+
+← result record_feedback
+{
+  "id": 2,
+  "submission_id": 2,
+  "provider_kind": "ai_assistant",
+  "provider_name": "mcp_roundtrip.py (scripted harness, not an LLM)",
+  "channel": "mcp",
+  "summary": "Strong boundaries and retrieval enforcement; validation section does not support its claims.",
+  "unverified_claims": [
+    "'fully compliant with 21 CFR Part 11' — no controls mapped",
+    "'proven to block all prompt injection attacks' — no test evidence"
+  ],
+  "next_step": "Replace section 6 with named tests tied to each claim in sections 1–5.",
+  "created_at": "2026-11-08T00:34:14+00:00",
+  "items": [
+    {
+      "id": 5,
+      "feedback_id": 2,
+      "criterion_id": 1,
+      "rating": "demonstrated",
+      "observation": "Names seven components; states the model holds no credentials.",
+      "judgment": "Trust boundary around the model is explicit.",
+      "gaps": "",
+      "criterion_code": "C1",
+      "criterion_title": "System boundaries and components",
+      "evidence": [
+        {
+          "id": 3,
+          "submission_id": 2,
+          "excerpt": "The model never holds credentials and cannot call source systems directly",
+          "start_offset": 608,
+          "end_offset": 681,
+          "created_at": "2026-11-08T00:34:14+00:00"
+        }
+      ],
+      "support": "evidenced"
+    },
+    {
+      "id": 6,
+      "feedback_id": 2,
+      "criterion_id": 2,
+      "rating": "demonstrated",
+      "observation": "On-behalf-of token exchange; ACL + classification filter at query time.",
+      "judgment": "",
+      "gaps": "",
+      "criterion_code": "C2",
+      "criterion_title": "Access control for retrieval",
+      "evidence": [
+        {
+          "id": 4,
+          "submission_id": 2,
+          "excerpt": "token exchange (on-behalf-of)",
+          "start_offset": 1232,
+          "end_off
+  … (truncated for transcript)
+
+→ call_tool recommend_next_practice
+{
+  "goal_id": 1
+}
+
+← result recommend_next_practice
+{
+  "action": "revise_and_resubmit",
+  "challenge_id": 1,
+  "submission_id": 2,
+  "focus_criteria": [
+    {
+      "code": "C3",
+      "title": "Governance of actions",
+      "reason": "partially demonstrated"
+    },
+    {
+      "code": "C6",
+      "title": "Validation plan and honesty about evidence",
+      "reason": "not evident in submission"
+    },
+    {
+      "code": "C4",
+      "title": "Auditability and provenance",
+      "reason": "not assessed"
+    },
+    {
+      "code": "C5",
+      "title": "Failure behavior and safety",
+      "reason": "not assessed"
+    }
+  ],
+  "evaluator_next_step": "Replace section 6 with named tests tied to each claim in sections 1–5.",
+  "evaluator": "mcp_roundtrip.py (scripted harness, not an LLM)",
+  "message": "Revise “Governed assistant: controlled-document retrieval and approved actions” and resubmit, focusing on C3, C6, C4, C5.",
+  "basis": "Feedback #2 by mcp_roundtrip.py (scripted harness, not an LLM) on submission #2."
+}
+
+Done. Submission #2 is now visible in the browser at /submissions/2
