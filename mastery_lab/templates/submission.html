@@ -1,10 +1,36 @@
 {% extends "base.html" %}
 {% block title %}Submission #{{ sub.id }}{% endblock %}
+{% block head %}{% if sub.evaluation and sub.evaluation.status == 'evaluating' %}<meta http-equiv="refresh" content="{{ EVAL_POLL_SECONDS }}">{% endif %}{% endblock %}
 {% block content %}
 {% set ch = sub.challenge %}
 <nav class="crumbs"><a href="/">Goals</a> / <a href="/goals/{{ goal.id }}">{{ goal.title }}</a> / <a href="/challenges/{{ ch.id }}">{{ ch.title }}</a> /</nav>
 <p class="eyebrow">Submission #{{ sub.id }} · {{ sub.created_at[:16].replace('T',' ') }} UTC · via {{ sub.source }}</p>
 <h1>{{ ch.title }}</h1>
+
+{% set ev = sub.evaluation %}
+<section id="evaluation" class="eval-status {{ ev.status if ev else ('ready' if AI_EVALUATOR else 'off') }}">
+  <ol class="eval-steps">
+    <li class="done">Submitted</li>
+    <li class="{{ 'current' if ev and ev.status == 'evaluating' else ('done' if ev and ev.status == 'evaluated' else '') }}">Evaluating</li>
+    <li class="{{ 'done' if ev and ev.status == 'evaluated' else ('failed' if ev and ev.status == 'failed' else '') }}">{{ 'Evaluation failed' if ev and ev.status == 'failed' else 'Evaluated' }}</li>
+  </ol>
+  {% if ev and ev.status == 'evaluating' %}
+    <p><strong>AI evaluation in progress</strong> ({{ ev.evaluator }}, started {{ ev.started_at[11:16] }} UTC). This usually takes a minute or two. The page refreshes by itself.</p>
+  {% elif ev and ev.status == 'evaluated' %}
+    <p><strong>Evaluated.</strong> <a href="#feedback-{{ ev.feedback_id }}">Read the criterion-by-criterion feedback</a>, then
+      <a class="button secondary" href="/challenges/{{ ch.id }}#submit">Submit an improved attempt</a></p>
+  {% elif ev and ev.status == 'failed' %}
+    <p><strong>Evaluation failed.</strong> {{ ev.error }}</p>
+    {% if AI_EVALUATOR %}<form method="post" action="/submissions/{{ sub.id }}/evaluate"><button type="submit">Retry evaluation</button></form>
+    {% else %}<p class="muted">AI evaluation is unavailable: {{ AI_OFF_REASON }}</p>{% endif %}
+  {% elif AI_EVALUATOR %}
+    <p>This submission has not been evaluated by AI yet.</p>
+    <form method="post" action="/submissions/{{ sub.id }}/evaluate"><button type="submit">Evaluate Submission</button></form>
+    <p class="muted small">Sends this submission and the challenge criteria to Claude through your local <code>{{ AI_EVALUATOR }}</code>. Every quote it cites is checked against your text before anything is saved.</p>
+  {% else %}
+    <p class="muted">AI evaluation is unavailable: {{ AI_OFF_REASON }} You can still use the feedback options below.</p>
+  {% endif %}
+</section>
 
 <div class="next">
   <p class="next-label">Recommended next step</p>
@@ -21,7 +47,7 @@
 <h2 id="feedback">Feedback</h2>
 <p class="assurance">{{ ASSURANCE_NOTE }}</p>
 {% for fb in sub.feedback %}
-<article class="feedback">
+<article class="feedback" id="feedback-{{ fb.id }}">
   <header>
     <strong>Feedback #{{ fb.id }}</strong>
     <span class="provider {{ fb.provider_kind }}">{{ 'AI assistant' if fb.provider_kind == 'ai_assistant' else 'Human' }}: {{ fb.provider_name }}</span>
@@ -29,7 +55,7 @@
   </header>
   {% if fb.summary %}<p>{{ fb.summary }}</p>{% endif %}
   <table class="items">
-    <thead><tr><th>Criterion</th><th>Rating</th><th>Observed in submission (with evidence)</th><th>Evaluator judgment</th><th>Gaps</th></tr></thead>
+    <thead><tr><th>Criterion</th><th>Rating</th><th>Observed in submission (with evidence)</th><th>Evaluator judgment</th><th>Gaps</th><th>Recommendation</th></tr></thead>
     <tbody>
     {% for it in fb["items"] %}
       <tr>
@@ -40,10 +66,11 @@
           {% for e in it.evidence %}<blockquote>“{{ e.excerpt }}” <span class="muted">[evidence #{{ e.id }}, chars {{ e.start_offset }}–{{ e.end_offset }}]</span></blockquote>{% endfor %}</td>
         <td>{{ it.judgment }}</td>
         <td>{{ it.gaps }}</td>
+        <td>{{ it.recommendation }}</td>
       </tr>
     {% endfor %}
     {% for na in fb.not_assessed %}
-      <tr class="na"><td><span class="code">{{ na.code }}</span> {{ na.title }}</td><td colspan="4" class="muted">Not assessed in this feedback record</td></tr>
+      <tr class="na"><td><span class="code">{{ na.code }}</span> {{ na.title }}</td><td colspan="5" class="muted">Not assessed in this feedback record</td></tr>
     {% endfor %}
     </tbody>
   </table>
@@ -54,7 +81,7 @@
   {% if fb.next_step %}<p><strong>Evaluator’s suggested next step:</strong> {{ fb.next_step }}</p>{% endif %}
 </article>
 {% else %}
-<p class="muted">No feedback yet. Enter it below, paste structured feedback from an AI assistant, or have a connected assistant record it through MCP.</p>
+<p class="muted">No feedback yet.{% if AI_EVALUATOR %} Use <strong>Evaluate Submission</strong> above, or{% else %}{% endif %} enter it below, or have a connected assistant record it through MCP.</p>
 {% endfor %}
 
 <h2>Add feedback</h2>
@@ -91,13 +118,17 @@
   </form>
 </details>
 
-<details {% if json_payload %}open{% endif %}>
-  <summary>Use any AI assistant without a connector (copy prompt → paste JSON)</summary>
-  <p class="muted">Nothing is sent anywhere by this app. Copy the prompt into an assistant you choose, then paste its JSON reply. Quotes are checked against your text before anything is saved.</p>
-  <label>Prompt<textarea readonly rows="10" class="mono" onclick="this.select()">{{ prompt }}</textarea></label>
-  <form method="post" action="/submissions/{{ sub.id }}/feedback-json" class="stack">
-    <label>Assistant’s JSON reply<textarea name="payload" rows="8" class="mono">{{ json_payload or '' }}</textarea></label>
-    <button type="submit">Validate and save</button>
-  </form>
-</details>
+<h2 id="evaluation-json">Evaluation JSON</h2>
+{% for fb, payload in exports %}
+<section class="export">
+  <header>
+    <strong>Feedback #{{ fb.id }}</strong>
+    <span class="muted">{{ fb.provider_name }} · {{ fb.created_at[:16].replace('T',' ') }} UTC</span>
+    <a class="button secondary" href="/feedback/{{ fb.id }}.json" download>Download JSON</a>
+  </header>
+  <pre class="mono json">{{ payload }}</pre>
+</section>
+{% else %}
+<p class="muted">Appears here after this submission is evaluated: one JSON record per feedback, to carry into your next intent.</p>
+{% endfor %}
 {% endblock %}

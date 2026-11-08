@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -220,6 +221,7 @@ class MasteryLab:
                 "SELECT id FROM feedback WHERE submission_id = ? ORDER BY id", (sid,))]
         sub["challenge"] = self.get_challenge(sub["challenge_id"])
         sub["feedback"] = [self.get_feedback(f) for f in fb_ids]
+        sub["evaluation"] = self.latest_evaluation(sid)
         return sub
 
     def list_submissions(self, challenge_id: Any) -> list[dict]:
@@ -343,10 +345,12 @@ class MasteryLab:
             fid = cur.lastrowid
             for cr, rating, item, quotes, ids in prepared:
                 icur = c.execute(
-                    """INSERT INTO feedback_items (feedback_id, criterion_id, rating, observation, judgment, gaps)
-                       VALUES (?,?,?,?,?,?)""",
+                    """INSERT INTO feedback_items (feedback_id, criterion_id, rating, observation, judgment, gaps,
+                                                  recommendation)
+                       VALUES (?,?,?,?,?,?,?)""",
                     (fid, cr["id"], rating, str(item.get("observation", "")).strip(),
-                     str(item.get("judgment", "")).strip(), str(item.get("gaps", "")).strip()))
+                     str(item.get("judgment", "")).strip(), str(item.get("gaps", "")).strip(),
+                     str(item.get("recommendation") or "").strip()))
                 ev_ids = list(ids) + [self._add_evidence(c, sub, q) for q in quotes]
                 c.executemany(
                     "INSERT OR IGNORE INTO feedback_item_evidence (feedback_item_id, evidence_id) VALUES (?,?)",
@@ -387,6 +391,84 @@ class MasteryLab:
                     (sub["challenge_id"],)) if r["id"] not in addressed]
         fb["assurance_note"] = ASSURANCE_NOTE
         return fb
+
+    # ---------------------------------------------------------- AI evaluation
+    def start_evaluation(self, submission_id: Any, evaluator: str) -> dict:
+        """Claim the submission for one AI evaluation run.
+
+        Returns the new run with ``created=True``, or the run already in progress or
+        already successful with ``created=False``. Never creates a duplicate.
+        """
+        sub = self.get_submission(submission_id)
+        try:
+            with self._conn() as c:
+                cur = c.execute(
+                    "INSERT INTO evaluations (submission_id, status, evaluator, started_at) VALUES (?,?,?,?)",
+                    (sub["id"], "evaluating", evaluator, _now()))
+                eid = cur.lastrowid
+        except sqlite3.IntegrityError:
+            return {**self.latest_evaluation(sub["id"]), "created": False}
+        return {**self.get_evaluation(eid), "created": True}
+
+    def finish_evaluation(self, evaluation_id: int, feedback_id: int) -> dict:
+        with self._conn() as c:
+            c.execute("UPDATE evaluations SET status='evaluated', feedback_id=?, finished_at=? "
+                      "WHERE id=? AND status='evaluating'", (feedback_id, _now(), evaluation_id))
+        return self.get_evaluation(evaluation_id)
+
+    def fail_evaluation(self, evaluation_id: int, error: str) -> dict:
+        with self._conn() as c:
+            c.execute("UPDATE evaluations SET status='failed', error=?, finished_at=? "
+                      "WHERE id=? AND status='evaluating'", ((error or "Unknown error").strip(), _now(),
+                                                              evaluation_id))
+        return self.get_evaluation(evaluation_id)
+
+    def fail_interrupted_evaluations(self) -> int:
+        """Mark runs left 'evaluating' by a stopped server as failed, so none hang forever."""
+        with self._conn() as c:
+            cur = c.execute("UPDATE evaluations SET status='failed', finished_at=?, "
+                            "error='Interrupted: the server stopped before the evaluation finished.' "
+                            "WHERE status='evaluating'", (_now(),))
+            return cur.rowcount
+
+    def get_evaluation(self, evaluation_id: int) -> dict:
+        with self._conn() as c:
+            ev = _row(c.execute("SELECT * FROM evaluations WHERE id = ?", (evaluation_id,)).fetchone())
+        if not ev:
+            raise _not_found("Evaluation", evaluation_id)
+        return ev
+
+    def latest_evaluation(self, submission_id: int) -> dict | None:
+        with self._conn() as c:
+            return _row(c.execute("SELECT * FROM evaluations WHERE submission_id = ? ORDER BY id DESC LIMIT 1",
+                                  (submission_id,)).fetchone())
+
+    def export_feedback(self, feedback_id: Any) -> dict:
+        """A self-contained record of one feedback, for carrying into the next intent."""
+        fb = self.get_feedback(feedback_id)
+        sub = self.get_submission(fb["submission_id"])
+        ch, goal = sub["challenge"], self.get_goal(sub["goal_id"])
+        crit = {c["code"]: c for c in ch["criteria"]}
+        return {
+            "goal": {"id": goal["id"], "title": goal["title"], "domain": goal["domain"]},
+            "challenge": {"id": ch["id"], "title": ch["title"]},
+            "submission": {"id": sub["id"], "created_at": sub["created_at"]},
+            "feedback": {"id": fb["id"], "provider_kind": fb["provider_kind"], "provider_name": fb["provider_name"],
+                         "channel": fb["channel"], "created_at": fb["created_at"]},
+            "summary": fb["summary"],
+            "next_step": fb["next_step"],
+            "unverified_claims": fb["unverified_claims"],
+            "items": [{
+                "criterion": it["criterion_code"], "title": it["criterion_title"],
+                "description": crit[it["criterion_code"]]["description"],
+                "rating": it["rating"], "support": it["support"],
+                "observation": it["observation"], "judgment": it["judgment"], "gaps": it["gaps"],
+                "recommendation": it["recommendation"],
+                "evidence_quotes": [e["excerpt"] for e in it["evidence"]],
+            } for it in fb["items"]],
+            "not_assessed": [na["code"] for na in fb["not_assessed"]],
+            "assurance_note": fb["assurance_note"],
+        }
 
     # -------------------------------------------------- context & next step
     def recommend_next(self, goal_id: Any) -> dict:
