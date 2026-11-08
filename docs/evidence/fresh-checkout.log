@@ -1,0 +1,18 @@
+$ git clone <repo> && cd mastery-lab
+$ python -m venv .venv && source .venv/bin/activate
+$ pip install -e ".[dev]"
+Name: mcp
+Version: 2.3.0
+Name: fastapi
+Version: 0.162.2
+$ pytest -q
+................................                                         [100%]
+32 passed in 2.74s
+$ bash tests/pre-implement.test.sh
+ok   - hook still gates other plugin repositories
+1 test(s) failed   <- starter fixture assumption; fixed, see docs/EVIDENCE.md
+$ python -m mastery_lab web &  ; curl /
+Mastery Lab: http://127.0.0.1:8765   (db: data/mastery_lab.db)
+GET / -> 200
+$ python scripts/mcp_roundtrip.py | tail -1
+Done. Submission #1 is now visible in the browser at /submissions/1

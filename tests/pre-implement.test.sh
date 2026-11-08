@@ -17,7 +17,10 @@ expect() {
   fi
 }
 
-expect fail "blank current-feature.md is not sufficient" "$root/intent/current-feature.md"
+# The project now has a real intent; test the gate against a blank scaffold copy instead.
+printf '# Current Feature\n\n## Outcome\n\n## Inputs\n\n## Outputs\n\n## Success / Evidence\n\n## Constraints / Boundaries\n' >"$tmp/blank-current-feature.md"
+expect fail "blank current-feature.md is not sufficient" "$tmp/blank-current-feature.md"
+expect pass "this project's current-feature.md is sufficient" "$root/intent/current-feature.md"
 expect fail "blank feature template is not sufficient" "$root/templates/feature-template.md"
 expect fail "missing file fails" "$tmp/does-not-exist.md"
 
