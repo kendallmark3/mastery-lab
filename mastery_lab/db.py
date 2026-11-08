@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS feedback_items (
     observation  TEXT NOT NULL DEFAULT '',  -- what is literally in the submission
     judgment     TEXT NOT NULL DEFAULT '',  -- the evaluator's inference
     gaps         TEXT NOT NULL DEFAULT '',
+    recommendation TEXT NOT NULL DEFAULT '',
     UNIQUE (feedback_id, criterion_id)
 );
 
@@ -91,6 +92,21 @@ CREATE TABLE IF NOT EXISTS feedback_item_evidence (
     evidence_id      INTEGER NOT NULL REFERENCES evidence(id),
     PRIMARY KEY (feedback_item_id, evidence_id)
 );
+
+-- AI evaluation runs. Failed runs are kept as history; at most one run per
+-- submission may be in progress or successful, so refreshes never duplicate.
+CREATE TABLE IF NOT EXISTS evaluations (
+    id            INTEGER PRIMARY KEY,
+    submission_id INTEGER NOT NULL REFERENCES submissions(id),
+    status        TEXT NOT NULL CHECK (status IN ('evaluating','evaluated','failed')),
+    evaluator     TEXT NOT NULL,
+    feedback_id   INTEGER REFERENCES feedback(id),
+    error         TEXT NOT NULL DEFAULT '',
+    started_at    TEXT NOT NULL,
+    finished_at   TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS evaluations_one_live_per_submission
+    ON evaluations(submission_id) WHERE status IN ('evaluating','evaluated');
 
 -- Session history: every meaningful learner action, used to resume.
 CREATE TABLE IF NOT EXISTS activity (
@@ -120,6 +136,14 @@ def init_db(path: Path | str) -> None:
     conn = connect(path)
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Additive upgrades for databases created by earlier versions."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(feedback_items)")}
+    if "recommendation" not in cols:
+        conn.execute("ALTER TABLE feedback_items ADD COLUMN recommendation TEXT NOT NULL DEFAULT ''")

@@ -1,6 +1,5 @@
 """Browser loop through the real FastAPI app, including restart and the no-connector JSON path."""
 
-import json
 import re
 
 from fastapi.testclient import TestClient
@@ -80,18 +79,9 @@ def test_feedback_with_invented_quote_rejected_in_browser(db_path):
     assert "Feedback #" not in c.get(sub_url).text
 
 
-def test_pasted_assistant_json_path(db_path):
+def test_paste_json_path_is_removed(db_path):
     c = client(db_path)
     sub_url = c.post("/challenges/1/submissions", data={"content": SAMPLE}, follow_redirects=False).headers["location"]
     page = c.get(sub_url).text
-    assert "Reply with ONLY this JSON" in page  # prompt is offered
-    bad = c.post(f"{sub_url}/feedback-json", data={"payload": "{not json"})
-    assert bad.status_code == 400 and "not valid JSON" in bad.text
-    payload = {"evaluator_name": "Claude", "summary": "Solid boundaries; validation missing.",
-               "next_step": "Add tests.", "unverified_claims": ["Part 11 compliance"],
-               "items": [{"criterion": "C2", "rating": "demonstrated",
-                          "evidence_quotes": ["token exchange (on-behalf-of)"]}]}
-    ok = c.post(f"{sub_url}/feedback-json", data={"payload": json.dumps(payload)}, follow_redirects=False)
-    assert ok.status_code == 303
-    page = c.get(sub_url).text
-    assert "AI assistant: Claude (pasted by learner)" in page and "via web-json" in page
+    assert "Reply with ONLY this JSON" not in page and "feedback-json" not in page
+    assert c.post(f"{sub_url}/feedback-json", data={"payload": "{}"}).status_code in (404, 405)

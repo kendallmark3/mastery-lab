@@ -1,6 +1,6 @@
 """Mastery Lab command line.
 
-  python -m mastery_lab web  [--host 127.0.0.1] [--port 8765] [--db PATH]
+  python -m mastery_lab web  [--host 127.0.0.1] [--port 8765] [--db PATH] [--no-ai] [--model NAME]
   python -m mastery_lab mcp  [--db PATH]          # MCP server over stdio
   python -m mastery_lab seed [--db PATH]          # create DB + seed challenge only
 """
@@ -19,6 +19,8 @@ def main(argv: list[str] | None = None) -> None:
     w.add_argument("--host", default="127.0.0.1")
     w.add_argument("--port", type=int, default=8765)
     w.add_argument("--db")
+    w.add_argument("--no-ai", action="store_true", help="turn off AI evaluation through the claude CLI")
+    w.add_argument("--model", help="model passed to `claude --model` for AI evaluation")
     m = sub.add_parser("mcp", help="run the MCP server on stdio")
     m.add_argument("--db")
     s = sub.add_parser("seed", help="initialise the database and seed challenge")
@@ -38,8 +40,17 @@ def main(argv: list[str] | None = None) -> None:
         if args.host not in ("127.0.0.1", "localhost", "::1"):
             print(f"WARNING: binding to {args.host}. Mastery Lab has no authentication and is not "
                   "production-ready.", file=sys.stderr)
+        from .evaluator import ClaudeCliEvaluator
+
+        evaluator, off_reason = None, "AI evaluation is turned off (--no-ai)."
+        if not args.no_ai:
+            if ClaudeCliEvaluator.available():
+                evaluator = ClaudeCliEvaluator(model=args.model)
+            else:
+                off_reason = "The `claude` command was not found on PATH. Install Claude Code and log in."
         print(f"Mastery Lab: http://{args.host}:{args.port}   (db: {lab.db_path})", file=sys.stderr)
-        uvicorn.run(create_app(lab), host=args.host, port=args.port, log_level="warning")
+        print(f"AI evaluation: {'claude CLI' if evaluator else off_reason}", file=sys.stderr)
+        uvicorn.run(create_app(lab, evaluator, off_reason), host=args.host, port=args.port, log_level="warning")
     elif args.cmd == "mcp":
         from .mcp_server import build_server
 

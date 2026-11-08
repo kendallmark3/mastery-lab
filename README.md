@@ -62,9 +62,9 @@ bash tests/pre-implement.test.sh   # starter's intent-gate tests
    submission and evidence-linked feedback, and shows the three rejections. Reload
    `/submissions/2` in the browser to see the record it created, tagged *via mcp*. *(SC-06)*
 
-No-connector option: on any submission page, **Use any AI assistant without a connector** gives you
-a prompt to paste into any assistant and a box to paste its JSON reply. Quotes are validated before
-anything is saved. Nothing leaves your machine unless you copy it out yourself.
+Evaluation JSON: the bottom of every submission page shows each feedback record as JSON
+(criteria, ratings, observations, gaps, recommendations, verified evidence quotes, provenance), with a
+**Download JSON** button (`/feedback/<id>.json`). Use it as the input to your next intent.
 
 ## Connect an MCP client
 

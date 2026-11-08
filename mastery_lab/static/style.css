@@ -75,3 +75,21 @@ mark { background: #e8f0fe; color: inherit; border-bottom: 2px solid #8ab4f8; pa
 .timeline li { padding: 6px 0; border-bottom: 1px solid var(--soft); display: flex; gap: 10px; }
 .when { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 130px; }
 code { background: var(--soft); padding: 1px 5px; border-radius: 5px; font-size: 13px; }
+
+/* AI evaluation status (INTENT-002) */
+.eval-status { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 20px; margin: 20px 0; }
+.eval-status.evaluating { border-color: var(--accent); }
+.eval-status.evaluated { border-color: var(--ok); }
+.eval-status.failed { border-color: var(--bad); }
+.eval-status p { margin: 8px 0; }
+.eval-status form { margin: 8px 0; }
+.eval-steps { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 0 0 6px; font-size: 13px; }
+.eval-steps li { border: 1px solid var(--line); border-radius: 999px; padding: 2px 12px; color: var(--muted); }
+.eval-steps li.done { border-color: var(--ok); color: var(--ok); }
+.eval-steps li.current { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.eval-steps li.failed { border-color: var(--bad); color: var(--bad); font-weight: 600; }
+.export { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px; margin: 14px 0; }
+.export header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.export header .button { margin-left: auto; }
+.export pre.json { background: var(--soft); border-radius: 8px; padding: 12px; max-height: 420px; overflow: auto;
+  font-size: 12.5px; white-space: pre-wrap; word-break: break-word; }

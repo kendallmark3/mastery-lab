@@ -8,11 +8,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from .evaluator import Evaluator, run_evaluation
 from .service import ASSURANCE_NOTE, RATINGS, LabError, MasteryLab
 
 HERE = Path(__file__).parent
@@ -23,6 +24,7 @@ SUPPORT_LABELS = {"evidenced": "Evidenced observation", "unverified": "Unverifie
 KIND_LABELS = {"goal_created": "Goal created", "challenge_created": "Challenge created",
                "challenge_opened": "Challenge opened", "submitted": "Submission saved",
                "feedback_recorded": "Feedback recorded"}
+EVAL_POLL_SECONDS = 4
 
 
 def highlight(content: str, evidence: list[dict]) -> list[tuple[str, bool]]:
@@ -45,47 +47,27 @@ def highlight(content: str, evidence: list[dict]) -> list[tuple[str, bool]]:
     return out
 
 
-def assistant_prompt(sub: dict) -> str:
-    ch = sub["challenge"]
-    crit = "\n".join(f"- {c['code']} {c['title']}: {c['description']}" for c in ch["criteria"])
-    return f"""You are evaluating a learner's written answer. Be specific and honest.
-
-CHALLENGE: {ch['title']}
-SCENARIO:
-{ch['scenario']}
-DELIVERABLE:
-{ch['deliverable']}
-CRITERIA:
-{crit}
-
-LEARNER SUBMISSION #{sub['id']}:
-<<<
-{sub['content']}
->>>
-
-Rules:
-- For each criterion give a rating: demonstrated | partial | not_evident.
-- "observation" = only what the submission literally says. "judgment" = your inference.
-- "evidence_quotes" must be copied VERBATIM from the submission (at least 8 characters).
-  Quotes that are not in the submission will be rejected by the system.
-- Do not rate demonstrated/partial without a quote; it will be shown as unverified.
-- List claims the learner makes that the text does not substantiate in "unverified_claims".
-- A well-argued design is not proof it works in operation; do not imply otherwise.
-
-Reply with ONLY this JSON:
-{{"evaluator_name": "<your model name>", "summary": "...", "next_step": "...",
- "unverified_claims": ["..."],
- "items": [{{"criterion": "C1", "rating": "partial", "observation": "...", "judgment": "...",
-            "gaps": "...", "evidence_quotes": ["..."]}}]}}"""
-
-
-def create_app(lab: MasteryLab | None = None) -> FastAPI:
+def create_app(lab: MasteryLab | None = None, evaluator: Evaluator | None = None,
+               evaluator_off_reason: str = "AI evaluation is turned off.") -> FastAPI:
+    """`evaluator=None` means no AI evaluation: the page says so and the manual paths still work."""
     lab = lab or MasteryLab()
+    lab.fail_interrupted_evaluations()
     app = FastAPI(title="Mastery Lab", docs_url=None, redoc_url=None)
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
     templates.env.globals.update(RATING_LABELS=RATING_LABELS, SUPPORT_LABELS=SUPPORT_LABELS,
-                                 KIND_LABELS=KIND_LABELS, RATINGS=RATINGS, ASSURANCE_NOTE=ASSURANCE_NOTE)
+                                 KIND_LABELS=KIND_LABELS, RATINGS=RATINGS, ASSURANCE_NOTE=ASSURANCE_NOTE,
+                                 EVAL_POLL_SECONDS=EVAL_POLL_SECONDS,
+                                 AI_EVALUATOR=evaluator.name if evaluator else None,
+                                 AI_OFF_REASON=evaluator_off_reason)
+
+    def start_ai_evaluation(submission_id: int, tasks: BackgroundTasks) -> None:
+        """Claim the submission and run the evaluator after the response is sent. Never duplicates."""
+        if evaluator is None:
+            return
+        ev = lab.start_evaluation(submission_id, evaluator.name)
+        if ev["created"]:
+            tasks.add_task(run_evaluation, lab, ev, evaluator)
 
     def render(request: Request, name: str, status: int = 200, **ctx) -> HTMLResponse:
         return templates.TemplateResponse(request, name, ctx, status_code=status)
@@ -147,7 +129,7 @@ def create_app(lab: MasteryLab | None = None) -> FastAPI:
             return error_page(request, e)
 
     @app.post("/challenges/{challenge_id}/submissions")
-    async def submit(request: Request, challenge_id: str):
+    async def submit(request: Request, challenge_id: str, tasks: BackgroundTasks):
         f = await request.form()
         try:
             sub = lab.submit(challenge_id, f.get("content", ""), channel="web")
@@ -157,6 +139,7 @@ def create_app(lab: MasteryLab | None = None) -> FastAPI:
             ch = lab.get_challenge(challenge_id)
             return render(request, "challenge.html", status=400, ch=ch, goal=lab.get_goal(ch["goal_id"]),
                           submissions=lab.list_submissions(ch["id"]), error=e.message, draft=f.get("content", ""))
+        start_ai_evaluation(sub["id"], tasks)
         return RedirectResponse(f"/submissions/{sub['id']}", status_code=303)
 
     # ------------------------------------------------------ submissions & fb
@@ -165,7 +148,9 @@ def create_app(lab: MasteryLab | None = None) -> FastAPI:
         return render(request, "submission.html", status=status, sub=sub,
                       goal=lab.get_goal(sub["goal_id"]),
                       segments=highlight(sub["content"], sub["evidence"]),
-                      prompt=assistant_prompt(sub), rec=lab.recommend_next(sub["goal_id"]), **extra)
+                      rec=lab.recommend_next(sub["goal_id"]),
+                      exports=[(fb, json.dumps(lab.export_feedback(fb["id"]), indent=2, ensure_ascii=False))
+                               for fb in sub["feedback"]], **extra)
 
     @app.get("/submissions/{submission_id}", response_class=HTMLResponse)
     def submission_page(request: Request, submission_id: str):
@@ -173,6 +158,18 @@ def create_app(lab: MasteryLab | None = None) -> FastAPI:
             return submission_view(request, submission_id)
         except LabError as e:
             return error_page(request, e)
+
+    @app.post("/submissions/{submission_id}/evaluate")
+    def evaluate(request: Request, submission_id: str, tasks: BackgroundTasks):
+        try:
+            sub = lab.get_submission(submission_id)
+        except LabError as e:
+            return error_page(request, e)
+        if evaluator is None:
+            return submission_view(request, submission_id, status=400,
+                                   error=f"AI evaluation is unavailable. {evaluator_off_reason}")
+        start_ai_evaluation(sub["id"], tasks)
+        return RedirectResponse(f"/submissions/{sub['id']}#evaluation", status_code=303)
 
     @app.post("/submissions/{submission_id}/feedback")
     async def feedback_form(request: Request, submission_id: str):
@@ -204,29 +201,14 @@ def create_app(lab: MasteryLab | None = None) -> FastAPI:
             return submission_view(request, submission_id, status=400, error=e.message, form=dict(f))
         return RedirectResponse(f"/submissions/{submission_id}#feedback", status_code=303)
 
-    @app.post("/submissions/{submission_id}/feedback-json")
-    async def feedback_json(request: Request, submission_id: str):
-        f = await request.form()
-        raw = str(f.get("payload", ""))
+    @app.get("/feedback/{feedback_id}.json")
+    def feedback_export(request: Request, feedback_id: str):
         try:
-            lab.get_submission(submission_id)
+            data = lab.export_feedback(feedback_id)
         except LabError as e:
             return error_page(request, e)
-        try:
-            data = json.loads(raw)
-            if not isinstance(data, dict):
-                raise ValueError("top-level value must be an object")
-        except ValueError as e:
-            return submission_view(request, submission_id, status=400,
-                                   error=f"Pasted feedback is not valid JSON: {e}", json_payload=raw)
-        try:
-            lab.record_feedback(
-                submission_id, provider_kind="ai_assistant",
-                provider_name=f"{data.get('evaluator_name') or 'AI assistant'} (pasted by learner)",
-                items=data.get("items"), summary=data.get("summary", ""), next_step=data.get("next_step", ""),
-                unverified_claims=data.get("unverified_claims") or [], channel="web-json")
-        except LabError as e:
-            return submission_view(request, submission_id, status=400, error=e.message, json_payload=raw)
-        return RedirectResponse(f"/submissions/{submission_id}#feedback", status_code=303)
+        name = f"submission-{data['submission']['id']}-feedback-{data['feedback']['id']}.json"
+        return Response(json.dumps(data, indent=2, ensure_ascii=False), media_type="application/json",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
     return app
